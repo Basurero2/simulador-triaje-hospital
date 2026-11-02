@@ -22,7 +22,7 @@ Sistema de simulación por eventos discretos orientado a la gestión de salas de
 ## 📁 Estructura del Repositorio
 
 ```text
-simulador-triaje-cpp/
+simulador-triaje-hospital/
 ├── src/                      # Código fuente principal de la aplicación
 │   ├── Paciente.hpp          # TAD Paciente (Estructura y cabeceras)
 │   ├── Paciente.cpp          # Implementación del TAD Paciente
