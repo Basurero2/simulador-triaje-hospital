@@ -1,0 +1,7 @@
+id,nombre,urgencia,tiempo_llegada
+1,Paciente_1,3,0
+2,Paciente_2,1,2
+3,Paciente_3,4,3
+4,Paciente_4,1,5
+5,Paciente_5,5,8
+6,Paciente_6,2,11
