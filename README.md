@@ -22,7 +22,7 @@ Sistema de simulación por eventos discretos orientado a la gestión de salas de
 ## 📁 Estructura del Repositorio
 
 ```text
-simulador-triaje-cpp/
+simulador-triaje-hospital/
 ├── src/                      # Código fuente principal de la aplicación
 │   ├── Paciente.hpp          # TAD Paciente (Estructura y cabeceras)
 │   ├── Paciente.cpp          # Implementación del TAD Paciente
@@ -61,8 +61,8 @@ Siga estos pasos para clonar el repositorio, compilar el simulador principal y e
 ### 1. Clonar y Acceder al Directorio
 
 ```bash
-git clone [https://github.com/tu-usuario/simulador-triaje-cpp.git](https://github.com/tu-usuario/simulador-triaje-cpp.git)
-cd simulador-triaje-cpp
+git clone https://github.com/Basurero2/simulador-triaje-hospital.git
+cd simulador-triaje-hospital
 ```
 
 *(Nota: Todos los comandos de compilación y ejecución deben ejecutarse desde la raíz del proyecto).*
