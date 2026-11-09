@@ -10,7 +10,19 @@ ListaOrdenada::~ListaOrdenada() {
 }
 
 void ListaOrdenada::insertar(const Paciente& p) {
-    // Implementar insercion secuencial O(n) usando p.tieneMayorPrioridadQue(...)
+    NodoPaciente* nuevo = new NodoPaciente(p);
+    if (estaVacia() || p.tieneMayorPrioridadQue(cabeza->dato)){
+        nuevo->siguiente = cabeza;
+        cabeza = nuevo;
+    }else{
+        NodoPaciente* actual = cabeza;
+        while (actual->siguiente != nullptr && !p.tieneMayorPrioridadQue(actual->siguiente->dato)){
+            actual = actual->siguiente;
+        }
+        nuevo->siguiente = actual->siguiente;
+        actual->siguiente = nuevo;
+    }
+    cantidad++;
 }
 
 Paciente ListaOrdenada::extraer() {
