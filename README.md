@@ -109,6 +109,17 @@ Para garantizar la integridad del código y evitar conflictos de integración du
 
 Cada integrante trabaja en sus archivos asignados dentro de `src/` aplicando este ciclo de sincronización:
 
+2.1. Conectar el repositorio a tu maquina local (solo se hace 1 vez, en caso uses una carpeta vacia)
+
+```bash
+git init
+git remote add origin https://github.com/Basurero2/simulador-triaje-hospital.git
+git fetch origin
+git checkout -b develop origin/develop
+```
+
+2.2. Cada cambio que se quiera subir al repo
+
 ```bash
 # 1. Antes de iniciar la jornada, actualizar cambios del equipo:
 git checkout develop
