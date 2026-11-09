@@ -3,6 +3,7 @@
 #include <fstream>
 #include <sstream>
 #include <iomanip>
+#include <stdexcept>
 
 Simulador::Simulador() : tiempoActual(0), siguienteLlegada(0) {
     reiniciarEstadisticas();
@@ -199,6 +200,7 @@ void Simulador::aplicarAging(ColaPrioridad& colaTriaje) {
     for (size_t i = 0; i < temporal.size(); i++) {
         if (temporal[i].urgencia > 1 && tiempoActual - temporal[i].tiempoLlegada >= UMBRAL_AGING) {
             temporal[i].urgencia--;
+            temporal[i].nivelEfectivo = temporal[i].urgencia;
             ascensosAging++;
         }
     }
