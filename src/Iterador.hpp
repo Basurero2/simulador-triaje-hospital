@@ -1,19 +1,21 @@
 #ifndef ITERADOR_HPP
 #define ITERADOR_HPP
 
-#include "Paciente.hpp"
-#include <vector>
+#include "ColaFIFO.hpp"
 
-class IteradorPaciente {
-private:
-    const std::vector<Paciente>& coleccion;
-    size_t posicion;
-
-public:
-    IteradorPaciente(const std::vector<Paciente>& col) : coleccion(col), posicion(0) {}
-    bool tieneSiguiente() const { return posicion < coleccion.size(); }
-    Paciente siguiente() { return coleccion[posicion++]; }
-    void reiniciar() { posicion = 0; }
+// TAD Iterador (Tabla 7): recorre una ColaFIFO sin sacar a nadie.
+// No se debe encolar ni desencolar mientras se recorre.
+struct Iterador {
+    NodoFIFO* actual;
 };
+
+inline void iteradorIniciar(Iterador* it, const ColaFIFO* c) { it->actual = c->frente; }
+inline int iteradorHaySiguiente(const Iterador* it) { return it->actual != NULL; }
+
+inline Paciente* iteradorSiguiente(Iterador* it) {
+    Paciente* p = it->actual->dato;
+    it->actual = it->actual->siguiente;
+    return p;
+}
 
 #endif

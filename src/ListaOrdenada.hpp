@@ -1,27 +1,14 @@
 #ifndef LISTA_ORDENADA_HPP
 #define LISTA_ORDENADA_HPP
 
-#include "ColaPrioridad.hpp"
+// Funciones de la lista ordenada. Se llaman desde cpInsertar, cpExtraer, etc. (ColaPrioridad.hpp).
+struct ColaPrioridad;
 
-struct NodoPaciente {
-    Paciente dato;
-    NodoPaciente* siguiente;
-    NodoPaciente(const Paciente& p) : dato(p), siguiente(nullptr) {}
-};
-
-class ListaOrdenada : public ColaPrioridad {
-private:
-    NodoPaciente* cabeza;
-    int cantidad;
-
-public:
-    ListaOrdenada();
-    ~ListaOrdenada() override;
-
-    void insertar(const Paciente& p) override;
-    Paciente extraer() override;
-    bool estaVacia() const override;
-    int tamano() const override;
-};
+void l_iniciar(ColaPrioridad* q);
+void l_insertar(ColaPrioridad* q, void* x);
+void* l_extraer(ColaPrioridad* q);
+void l_reordenar(ColaPrioridad* q);
+void l_paraCada(ColaPrioridad* q, void (*f)(void*, void*), void* contexto);
+void l_liberar(ColaPrioridad* q);
 
 #endif
