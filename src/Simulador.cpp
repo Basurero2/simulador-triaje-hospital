@@ -1,137 +1,131 @@
 #include "Simulador.hpp"
+#include "Iterador.hpp"
+#include "Bolsa.hpp"
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
-#include <iomanip>
+#include <vector>
 #include <stdexcept>
 
-Simulador::Simulador() : tiempoActual(0), siguienteLlegada(0) {
-    reiniciarEstadisticas();
+void simuladorIniciar(Simulador* s) {
+    s->pacientes = NULL;
+    s->numPacientes = 0;
+    s->siguienteLlegada = 0;
+    relojIniciar(&s->reloj, 0);
+    s->tipoCola = MONTICULO;
+    s->agingActivo = 1;
+    s->ascensos = 0;
+    s->tiempoFinal = 0;
+    s->comparaciones = 0;
+    s->ejecutada = 0;
 }
 
-void Simulador::reiniciarEstadisticas() {
-    totalAtendidos = 0;
-    sumaEspera = 0;
-    maxEspera = 0;
-    tiempoFinal = 0;
-    ascensosAging = 0;
-    for (int i = 0; i <= NIVELES; i++) {
-        sumaEsperaNivel[i] = 0;
-        cantidadNivel[i] = 0;
-        maxEsperaNivel[i] = 0;
-    }
-    for (int c = 0; c < NUM_CONSULTORIOS; c++) {
-        ocupado[c] = false;
-    }
+void simuladorLiberar(Simulador* s) {
+    delete[] s->pacientes;
+    s->pacientes = NULL;
+    s->numPacientes = 0;
 }
 
-// Ordenamiento por insercion segun tiempoLlegada.
-// Es estable: si dos pacientes llegan al mismo tiempo, se respeta el orden del archivo.
-void Simulador::ordenarPorLlegada() {
-    for (size_t i = 1; i < pacientes.size(); i++) {
-        Paciente actual = pacientes[i];
-        int j = (int)i - 1;
-        while (j >= 0 && pacientes[j].tiempoLlegada > actual.tiempoLlegada) {
-            pacientes[j + 1] = pacientes[j];
-            j--;
-        }
-        pacientes[j + 1] = actual;
-    }
-}
+// ======================= CARGA DEL CSV =======================
 
-void Simulador::cargarDatosDesdeCSV(const std::string& rutaCSV) {
-    pacientes.clear();   // por si se carga mas de una vez
+// El CSV no trae duracion ni diagnostico, asi que se calculan a partir del id (siempre igual).
+static int duracionDe(int id) { return 5 + (id * 7) % 16; }               // 5 a 20 minutos
+static int diagnosticoDe(int id) { return 1 + (id * 5) % NUM_DIAGNOSTICOS; }
 
-    std::ifstream archivo(rutaCSV);
+int simuladorCargarCSV(Simulador* s, const std::string& ruta) {
+    simuladorLiberar(s);
+
+    std::ifstream archivo(ruta);
     if (!archivo.is_open()) {
-        std::cout << "[Simulador] ERROR: no se pudo abrir el archivo: " << rutaCSV << "\n";
-        return;
+        std::cout << "[Simulador] ERROR: no se pudo abrir el archivo: " << ruta << "\n";
+        return 0;
     }
 
+    std::vector<Paciente> leidos;   // temporal: despues se copia a un arreglo del tamano exacto
     std::string linea;
     int numeroLinea = 0;
     int descartadas = 0;
 
     while (std::getline(archivo, linea)) {
         numeroLinea++;
+        if (!linea.empty() && linea.back() == '\r') linea.pop_back();   // saltos de linea de Windows
+        if (numeroLinea == 1) continue;                                 // cabecera
+        if (linea.empty()) continue;
 
-        // El archivo puede venir con saltos de linea de Windows (\r\n):
-        // quitamos el '\r' sobrante al final de la linea.
-        if (!linea.empty() && linea.back() == '\r') {
-            linea.pop_back();
-        }
-
-        if (numeroLinea == 1) continue;   // primera linea = encabezado
-        if (linea.empty()) continue;      // ignorar lineas en blanco
-
-        // Separar la linea en 4 campos: id,nombre,urgencia,tiempo_llegada
         std::stringstream ss(linea);
-        std::string campoId, nombre, campoUrgencia, campoLlegada;
+        std::string campoId, nombre, campoNivel, campoLlegada;
         std::getline(ss, campoId, ',');
         std::getline(ss, nombre, ',');
-        std::getline(ss, campoUrgencia, ',');
+        std::getline(ss, campoNivel, ',');
         std::getline(ss, campoLlegada, ',');
 
         try {
             int id = std::stoi(campoId);
-            int urgencia = std::stoi(campoUrgencia);
+            int nivel = std::stoi(campoNivel);
             int llegada = std::stoi(campoLlegada);
-
-            // Validaciones basicas del dato
-            if (nombre.empty() || urgencia < 1 || urgencia > 5 || llegada < 0) {
+            if (nombre.empty() || nivel < 1 || nivel > NIVELES || llegada < 0) {
                 throw std::invalid_argument("dato fuera de rango");
             }
-            pacientes.push_back(Paciente(id, nombre, urgencia, llegada));
+            Paciente p;
+            pacienteIniciar(&p, id, nombre.c_str(), nivel, llegada, duracionDe(id), diagnosticoDe(id));
+            leidos.push_back(p);
         } catch (const std::exception&) {
-            // stoi lanza excepcion si el campo esta vacio o no es un numero
             std::cout << "[Simulador] Linea " << numeroLinea << " invalida, se omite: " << linea << "\n";
             descartadas++;
         }
     }
 
-    ordenarPorLlegada();
+    s->numPacientes = (int)leidos.size();
+    s->pacientes = new Paciente[s->numPacientes > 0 ? s->numPacientes : 1];
+    for (int i = 0; i < s->numPacientes; i++) s->pacientes[i] = leidos[i];
 
-    std::cout << "[Simulador] Pacientes cargados: " << pacientes.size()
-              << " (lineas omitidas: " << descartadas << ")\n";
-}
-
-// Duracion de la consulta: depende solo del id del paciente (entre 5 y 20 min).
-// Asi es la misma con heap o con lista, y no hace falta usar numeros aleatorios.
-int Simulador::duracionAtencion(const Paciente& p) const {
-    return 5 + (p.id * 7) % 16;
-}
-
-// El aging cambia la urgencia del paciente dentro de la cola, asi que para las
-// estadisticas buscamos su urgencia original en la lista leida del CSV.
-int Simulador::urgenciaOriginal(const Paciente& p) const {
-    for (size_t i = 0; i < pacientes.size(); i++) {
-        if (pacientes[i].id == p.id) {
-            return pacientes[i].urgencia;
+    // Ordenar por llegada (insercion): la simulacion necesita las llegadas en orden.
+    for (int i = 1; i < s->numPacientes; i++) {
+        Paciente actual = s->pacientes[i];
+        int j = i - 1;
+        while (j >= 0 && compararLlegada(&s->pacientes[j], &actual) > 0) {
+            s->pacientes[j + 1] = s->pacientes[j];
+            j--;
         }
+        s->pacientes[j + 1] = actual;
     }
-    return p.urgencia;
+
+    std::cout << "[Simulador] Pacientes cargados: " << s->numPacientes
+              << " (lineas omitidas: " << descartadas << ")\n";
+    return s->numPacientes;
 }
 
-// Agenda la llegada del proximo paciente del CSV (de a uno, no todos de golpe)
-void Simulador::programarSiguienteLlegada() {
-    if (siguienteLlegada < pacientes.size()) {
-        Evento e;
-        e.tiempo = pacientes[siguienteLlegada].tiempoLlegada;
-        e.tipo = TipoEvento::LLEGADA_PACIENTE;
-        e.paciente = pacientes[siguienteLlegada];
-        agenda.insertar(e);
-        siguienteLlegada++;
+// ======================= MOTOR DE SIMULACION =======================
+
+// Agenda la llegada del proximo paciente del CSV (de a uno).
+static void programarSiguienteLlegada(Simulador* s) {
+    if (s->siguienteLlegada < s->numPacientes) {
+        Paciente* p = &s->pacientes[s->siguienteLlegada];
+        agendaProgramar(&s->agenda, p->llegada, EV_LLEGADA, p, -1);
+        s->siguienteLlegada++;
     }
 }
 
-// Devuelve el consultorio con espacio en su FIFO y menos carga
-// (carga = pacientes esperando + 1 si esta atendiendo). Devuelve -1 si todos estan llenos.
-int Simulador::consultorioConMenosCarga() const {
+// El consultorio c toma al primero de su FIFO y programa el fin de su consulta.
+static void iniciarAtencion(Simulador* s, int c) {
+    Consultorio* k = &s->consultorios[c];
+    Paciente* p = colaDesencolar(&k->fila);
+    k->ocupado = 1;
+    k->actual = p;
+    p->inicio = relojObtener(&s->reloj);
+    p->fin = p->inicio + p->duracion;
+    agendaProgramar(&s->agenda, p->fin, EV_FIN_ATENCION, p, c);
+}
+
+// Consultorio con espacio en su FIFO y menos carga (carga = esperando + 1 si atiende). -1 si todos llenos.
+static int consultorioMenorCarga(const Simulador* s) {
     int mejor = -1;
     int menorCarga = 0;
     for (int c = 0; c < NUM_CONSULTORIOS; c++) {
-        if (filas[c].tamano() < CAPACIDAD_FIFO) {
-            int carga = filas[c].tamano() + (ocupado[c] ? 1 : 0);
+        const Consultorio* k = &s->consultorios[c];
+        if (!colaLlena(&k->fila)) {
+            int carga = colaTamano(&k->fila) + k->ocupado;
             if (mejor == -1 || carga < menorCarga) {
                 mejor = c;
                 menorCarga = carga;
@@ -141,149 +135,212 @@ int Simulador::consultorioConMenosCarga() const {
     return mejor;
 }
 
-// El consultorio c toma al primero de su FIFO, registra su espera y programa el fin de la consulta
-void Simulador::iniciarAtencion(int c) {
-    Paciente p = filas[c].desencolar();
-    int espera = tiempoActual - p.tiempoLlegada;
-    int nivel = urgenciaOriginal(p);
-
-    totalAtendidos++;
-    sumaEspera += espera;
-    if (espera > maxEspera) maxEspera = espera;
-    if (nivel >= 1 && nivel <= NIVELES) {
-        sumaEsperaNivel[nivel] += espera;
-        cantidadNivel[nivel]++;
-        if (espera > maxEsperaNivel[nivel]) maxEsperaNivel[nivel] = espera;
-    }
-
-    ocupado[c] = true;
-    Evento fin;
-    fin.tiempo = tiempoActual + duracionAtencion(p);
-    fin.tipo = TipoEvento::FIN_ATENCION;
-    fin.paciente = p;
-    fin.consultorio = c;
-    agenda.insertar(fin);
-}
-
-// Mueve pacientes por el sistema hasta que no se pueda avanzar mas:
-//   1) consultorios libres empiezan a atender a quien esta en su FIFO
-//   2) pacientes de la cola de prioridad pasan a las FIFO que tengan espacio
-void Simulador::despachar(ColaPrioridad& colaTriaje) {
-    bool huboCambios = true;
-    while (huboCambios) {
-        huboCambios = false;
-
-        for (int c = 0; c < NUM_CONSULTORIOS; c++) {
-            if (!ocupado[c] && !filas[c].estaVacia()) {
-                iniciarAtencion(c);
-                huboCambios = true;
-            }
-        }
-
-        while (!colaTriaje.estaVacia()) {
-            int c = consultorioConMenosCarga();
-            if (c == -1) break;   // todas las FIFO estan llenas
-            filas[c].encolar(colaTriaje.extraer());
-            huboCambios = true;
-        }
+// Pasa pacientes de la cola de prioridad a las FIFO mientras haya espacio.
+static void asignarConsultorios(Simulador* s) {
+    while (!cpVacia(&s->cola)) {
+        int c = consultorioMenorCarga(s);
+        if (c == -1) break;
+        Paciente* p = (Paciente*)cpExtraer(&s->cola);
+        colaEncolar(&s->consultorios[c].fila, p);
+        if (!s->consultorios[c].ocupado) iniciarAtencion(s, c);
     }
 }
 
-// Aging: los que llevan mucho esperando en la cola de prioridad suben un nivel (urgencia - 1).
-// ColaPrioridad no permite recorrer sus elementos, asi que la sacamos completa,
-// modificamos y volvemos a insertar. Funciona igual con heap y con lista.
-void Simulador::aplicarAging(ColaPrioridad& colaTriaje) {
-    std::vector<Paciente> temporal;
-    while (!colaTriaje.estaVacia()) {
-        temporal.push_back(colaTriaje.extraer());
-    }
-    for (size_t i = 0; i < temporal.size(); i++) {
-        if (temporal[i].urgencia > 1 && tiempoActual - temporal[i].tiempoLlegada >= UMBRAL_AGING) {
-            temporal[i].urgencia--;
-            temporal[i].nivelEfectivo = temporal[i].urgencia;
-            ascensosAging++;
-        }
-    }
-    for (size_t i = 0; i < temporal.size(); i++) {
-        colaTriaje.insertar(temporal[i]);
+// ---- Aging ----
+struct ContextoAging {
+    int ahora;
+    int ascensos;
+};
+
+// Se aplica a cada paciente de la cola: si espero mucho, sube un nivel.
+static void envejecer(void* elemento, void* contexto) {
+    Paciente* p = (Paciente*)elemento;
+    ContextoAging* ctx = (ContextoAging*)contexto;
+    if (ctx->ahora - p->llegada >= UMBRAL_AGING && p->nivelEfectivo > 1) {
+        p->nivelEfectivo--;
+        ctx->ascensos++;
     }
 }
 
-void Simulador::ejecutar(ColaPrioridad& colaTriaje) {
-    reiniciarEstadisticas();
-    tiempoActual = 0;
-    siguienteLlegada = 0;
+static void aplicarAging(Simulador* s) {
+    ContextoAging ctx;
+    ctx.ahora = relojObtener(&s->reloj);
+    ctx.ascensos = 0;
+    cpParaCada(&s->cola, envejecer, &ctx);
+    if (ctx.ascensos > 0) cpReordenar(&s->cola);   // las prioridades cambiaron: reordenar
+    s->ascensos += ctx.ascensos;
+}
 
-    if (pacientes.empty()) {
+// ---- Traza paso a paso (para mostrar como funciona) ----
+static void imprimirTraza(const Simulador* s, const Evento* ev, int numero) {
+    std::cout << "\n[Evento " << numero << "] t=" << ev->tiempo << " min  ";
+    if (ev->tipo == EV_LLEGADA) {
+        std::cout << "LLEGADA: #" << ev->paciente->id << " " << ev->paciente->nombre
+                  << " (nivel " << ev->paciente->nivelOriginal << ")\n";
+    } else if (ev->tipo == EV_FIN_ATENCION) {
+        std::cout << "FIN_ATENCION: termina #" << ev->paciente->id << " en consultorio "
+                  << ev->consultorio + 1 << "\n";
+    } else {
+        std::cout << "ENVEJECIMIENTO: revision de espera (ascensos hasta ahora: " << s->ascensos << ")\n";
+    }
+    std::cout << "   Cola de prioridad: " << cpTamano(&s->cola) << " esperando\n";
+    for (int c = 0; c < NUM_CONSULTORIOS; c++) {
+        const Consultorio* k = &s->consultorios[c];
+        std::cout << "   Consultorio " << c + 1 << ": ";
+        if (k->ocupado) std::cout << "atiende #" << k->actual->id << " (hasta t=" << k->actual->fin << ")";
+        else std::cout << "libre";
+        std::cout << " | fila:";
+        if (colaVacia(&k->fila)) std::cout << " -";
+        Iterador it;                                  // recorre la FIFO sin sacar a nadie
+        iteradorIniciar(&it, &k->fila);
+        while (iteradorHaySiguiente(&it)) {
+            Paciente* p = iteradorSiguiente(&it);
+            std::cout << " #" << p->id << "(N" << p->nivelEfectivo << ")";
+        }
+        std::cout << "\n";
+    }
+}
+
+void simuladorEjecutar(Simulador* s, TipoCola tipo, int agingActivo, int trazaEventos) {
+    if (s->numPacientes == 0) {
         std::cout << "[Simulador] No hay pacientes cargados. Nada que simular.\n";
         return;
     }
 
-    // Eventos iniciales: la primera llegada y la primera revision de aging
-    programarSiguienteLlegada();
-    Evento aging;
-    aging.tiempo = pacientes[0].tiempoLlegada + INTERVALO_AGING;
-    aging.tipo = TipoEvento::AGING_CHECK;
-    agenda.insertar(aging);
-
-    // Bucle principal: sacar el evento mas proximo y procesarlo
-    while (!agenda.estaVacia()) {
-        Evento ev = agenda.sacarSiguiente();
-        tiempoActual = ev.tiempo;
-
-        switch (ev.tipo) {
-            case TipoEvento::LLEGADA_PACIENTE:
-                colaTriaje.insertar(ev.paciente);
-                programarSiguienteLlegada();
-                despachar(colaTriaje);
-                break;
-
-            case TipoEvento::FIN_ATENCION:
-                ocupado[ev.consultorio] = false;
-                tiempoFinal = tiempoActual;
-                despachar(colaTriaje);
-                break;
-
-            case TipoEvento::AGING_CHECK:
-                aplicarAging(colaTriaje);
-                // Solo seguimos revisando si todavia hay pacientes por llegar o esperando
-                if (siguienteLlegada < pacientes.size() || !colaTriaje.estaVacia()) {
-                    Evento siguiente;
-                    siguiente.tiempo = tiempoActual + INTERVALO_AGING;
-                    siguiente.tipo = TipoEvento::AGING_CHECK;
-                    agenda.insertar(siguiente);
-                }
-                break;
-        }
+    // Preparar: la misma carga de pacientes se puede simular varias veces
+    for (int i = 0; i < s->numPacientes; i++) {
+        Paciente* p = &s->pacientes[i];
+        p->nivelEfectivo = p->nivelOriginal;
+        p->inicio = -1;
+        p->fin = -1;
     }
+    s->tipoCola = tipo;
+    s->agingActivo = agingActivo;
+    s->ascensos = 0;
+    s->tiempoFinal = 0;
+    s->siguienteLlegada = 0;
+    relojIniciar(&s->reloj, 0);
+    agendaIniciar(&s->agenda);
+    cpIniciar(&s->cola, tipo, compararPrioridad);
+    for (int c = 0; c < NUM_CONSULTORIOS; c++) {
+        colaIniciar(&s->consultorios[c].fila, CAPACIDAD_FIFO);
+        s->consultorios[c].ocupado = 0;
+        s->consultorios[c].actual = NULL;
+        s->consultorios[c].atendidos = 0;
+        s->consultorios[c].minutosOcupado = 0;
+    }
+
+    // Eventos iniciales: la primera llegada y (si esta activo) la primera revision de aging
+    programarSiguienteLlegada(s);
+    if (agingActivo) {
+        agendaProgramar(&s->agenda, s->pacientes[0].llegada + INTERVALO_AGING, EV_ENVEJECIMIENTO, NULL, -1);
+    }
+
+    // Bucle principal: sacar el evento mas proximo, avanzar el reloj y procesarlo
+    int procesados = 0;
+    while (!agendaVacia(&s->agenda)) {
+        Evento* ev = agendaExtraerSiguiente(&s->agenda);
+        relojAvanzar(&s->reloj, ev->tiempo);
+
+        if (ev->tipo == EV_LLEGADA) {
+            cpInsertar(&s->cola, ev->paciente);
+            programarSiguienteLlegada(s);
+            asignarConsultorios(s);
+        } else if (ev->tipo == EV_FIN_ATENCION) {
+            Consultorio* k = &s->consultorios[ev->consultorio];
+            k->ocupado = 0;
+            k->actual = NULL;
+            k->atendidos++;
+            k->minutosOcupado += ev->paciente->duracion;
+            if (ev->paciente->fin > s->tiempoFinal) s->tiempoFinal = ev->paciente->fin;
+            if (!colaVacia(&k->fila)) iniciarAtencion(s, ev->consultorio);
+            asignarConsultorios(s);
+        } else {   // EV_ENVEJECIMIENTO
+            aplicarAging(s);
+            // Se vuelve a programar solo si todavia queda trabajo pendiente
+            if (s->siguienteLlegada < s->numPacientes || !cpVacia(&s->cola)) {
+                agendaProgramar(&s->agenda, relojObtener(&s->reloj) + INTERVALO_AGING, EV_ENVEJECIMIENTO, NULL, -1);
+            }
+        }
+
+        procesados++;
+        if (trazaEventos > 0 && procesados <= trazaEventos) imprimirTraza(s, ev, procesados);
+        delete ev;   // el evento lo reservo agendaProgramar; lo liberamos al procesarlo
+    }
+
+    s->comparaciones = s->cola.comparaciones;
+    cpLiberar(&s->cola);
+    agendaLiberar(&s->agenda);
+    for (int c = 0; c < NUM_CONSULTORIOS; c++) colaLiberar(&s->consultorios[c].fila);
+    s->ejecutada = 1;
 }
 
-void Simulador::mostrarReporteEstadistico() const {
-    if (totalAtendidos == 0) {
+// ======================= REPORTE =======================
+
+void simuladorReporte(const Simulador* s) {
+    if (!s->ejecutada) {
         std::cout << "[Simulador] No hay resultados para mostrar.\n";
         return;
     }
 
+    // Las metricas se calculan recorriendo los pacientes: espera = inicio - llegada
+    int atendidos = 0, maxEspera = 0;
+    long sumaEspera = 0;
+    long sumaNivel[NIVELES + 1] = {0};
+    int cantNivel[NIVELES + 1] = {0};
+    int maxNivel[NIVELES + 1] = {0};
+    Bolsa porDiagnostico;
+    bolsaIniciar(&porDiagnostico);
+
+    for (int i = 0; i < s->numPacientes; i++) {
+        const Paciente* p = &s->pacientes[i];
+        if (p->inicio < 0) continue;
+        int espera = p->inicio - p->llegada;
+        atendidos++;
+        sumaEspera += espera;
+        if (espera > maxEspera) maxEspera = espera;
+        int n = p->nivelOriginal;   // por nivel ORIGINAL (el aging cambia el efectivo)
+        sumaNivel[n] += espera;
+        cantNivel[n]++;
+        if (espera > maxNivel[n]) maxNivel[n] = espera;
+        bolsaAgregar(&porDiagnostico, p->diagnostico);
+    }
+
     std::cout << std::fixed << std::setprecision(2);
     std::cout << "\n========== REPORTE DE LA SIMULACION ==========\n";
-    std::cout << "Consultorios:               " << NUM_CONSULTORIOS << "\n";
-    std::cout << "Pacientes atendidos:        " << totalAtendidos << "\n";
-    std::cout << "Tiempo total simulado:      " << tiempoFinal << " min\n";
-    std::cout << "Espera promedio:            " << (double)sumaEspera / totalAtendidos << " min\n";
+    std::cout << "Cola de prioridad:          " << (s->tipoCola == MONTICULO ? "Monticulo binario" : "Lista ordenada") << "\n";
+    std::cout << "Aging:                      " << (s->agingActivo ? "activado" : "desactivado") << "\n";
+    std::cout << "Pacientes atendidos:        " << atendidos << "\n";
+    std::cout << "Tiempo total simulado:      " << s->tiempoFinal << " min\n";
+    std::cout << "Espera promedio:            " << (atendidos ? (double)sumaEspera / atendidos : 0.0) << " min\n";
     std::cout << "Espera maxima:              " << maxEspera << " min\n";
-    std::cout << "Ascensos por aging:         " << ascensosAging << "\n";
+    std::cout << "Ascensos por aging:         " << s->ascensos << "\n";
+    std::cout << "Comparaciones de la cola:   " << s->comparaciones << "\n";
 
-    std::cout << "\nEspera por nivel de urgencia (urgencia original):\n";
+    std::cout << "\nEspera por nivel de urgencia (nivel original):\n";
     std::cout << std::left << std::setw(8) << "Nivel" << std::setw(12) << "Atendidos"
               << std::setw(12) << "Promedio" << "Maxima\n";
     for (int n = 1; n <= NIVELES; n++) {
-        std::cout << std::left << std::setw(8) << n << std::setw(12) << cantidadNivel[n];
-        if (cantidadNivel[n] > 0) {
-            std::cout << std::setw(12) << (double)sumaEsperaNivel[n] / cantidadNivel[n]
-                      << maxEsperaNivel[n] << "\n";
+        std::cout << std::left << std::setw(8) << n << std::setw(12) << cantNivel[n];
+        if (cantNivel[n] > 0) {
+            std::cout << std::setw(12) << (double)sumaNivel[n] / cantNivel[n] << maxNivel[n] << "\n";
         } else {
             std::cout << std::setw(12) << "-" << "-\n";
         }
     }
+
+    std::cout << "\nOcupacion de los consultorios:\n";
+    std::cout << std::left << std::setw(14) << "Consultorio" << std::setw(12) << "Atendidos" << "Ocupacion\n";
+    for (int c = 0; c < NUM_CONSULTORIOS; c++) {
+        double ocup = s->tiempoFinal > 0 ? 100.0 * s->consultorios[c].minutosOcupado / s->tiempoFinal : 0.0;
+        std::cout << std::left << std::setw(14) << c + 1 << std::setw(12) << s->consultorios[c].atendidos
+                  << ocup << " %\n";
+    }
+
+    std::cout << "\nPacientes atendidos por diagnostico:\n";
+    for (int d = 1; d <= NUM_DIAGNOSTICOS; d++) {
+        std::cout << "  Diagnostico " << d << ": " << bolsaContar(&porDiagnostico, d) << "\n";
+    }
+    bolsaLiberar(&porDiagnostico);
     std::cout << "==============================================\n";
 }

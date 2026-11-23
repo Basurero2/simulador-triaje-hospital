@@ -1,24 +1,15 @@
 #ifndef MONTICULO_BINARIO_HPP
 #define MONTICULO_BINARIO_HPP
 
-#include "ColaPrioridad.hpp"
-#include <vector>
+// Funciones del montículo. Se llaman desde cpInsertar, cpExtraer, etc. (ColaPrioridad.hpp).
+// flotar() y hundir() son pasos internos y por eso no se declaran aqui.
+struct ColaPrioridad;
 
-class MonticuloBinario : public ColaPrioridad {
-private:
-    std::vector<Paciente> heap;
-
-    void flotar(int indice);
-    void hundir(int indice);
-
-public:
-    MonticuloBinario();
-    ~MonticuloBinario() override = default;
-
-    void insertar(const Paciente& p) override;
-    Paciente extraer() override;
-    bool estaVacia() const override;
-    int tamano() const override;
-};
+void m_iniciar(ColaPrioridad* q);
+void m_insertar(ColaPrioridad* q, void* x);
+void* m_extraer(ColaPrioridad* q);
+void m_reordenar(ColaPrioridad* q);
+void m_paraCada(ColaPrioridad* q, void (*f)(void*, void*), void* contexto);
+void m_liberar(ColaPrioridad* q);
 
 #endif

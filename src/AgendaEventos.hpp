@@ -1,84 +1,65 @@
 #ifndef AGENDA_EVENTOS_HPP
 #define AGENDA_EVENTOS_HPP
 
+#include <cstddef>
 #include "Paciente.hpp"
-#include <string>
+#include "ColaPrioridad.hpp"
 
-enum class TipoEvento { LLEGADA_PACIENTE, FIN_ATENCION, AGING_CHECK };
+// Agenda de eventos (FEL, Tabla 4): un montículo (ColaPrioridad) de eventos ordenados por tiempo.
+// Si dos eventos coinciden en el tiempo, el orden del enum decide: primero terminan las
+// consultas (se libera el consultorio), luego llegan pacientes y al final se revisa el aging.
+enum TipoEvento { EV_FIN_ATENCION = 0, EV_LLEGADA = 1, EV_ENVEJECIMIENTO = 2 };
 
 struct Evento {
-    int tiempo = 0;
-    TipoEvento tipo = TipoEvento::LLEGADA_PACIENTE;
-    Paciente paciente;
-    int consultorio = -1;   // solo se usa en FIN_ATENCION: que consultorio termino
-
-    bool operator>(const Evento& otro) const {
-        return this->tiempo > otro.tiempo;
-    }
+    int tiempo;
+    int tipo;
+    Paciente* paciente;   // NULL en ENVEJECIMIENTO
+    int consultorio;      // solo se usa en FIN_ATENCION
+    long orden;           // orden de programacion: desempata eventos iguales
 };
 
-// Nodo de la lista enlazada de eventos
-struct NodoEvento {
-    Evento dato;
-    NodoEvento* siguiente;
-    NodoEvento(const Evento& e) : dato(e), siguiente(nullptr) {}
+inline int compararEvento(const void* a, const void* b) {
+    const Evento* x = (const Evento*)a;
+    const Evento* y = (const Evento*)b;
+    if (x->tiempo != y->tiempo) return x->tiempo - y->tiempo;
+    if (x->tipo != y->tipo) return x->tipo - y->tipo;
+    if (x->orden < y->orden) return -1;
+    if (x->orden > y->orden) return 1;
+    return 0;
+}
+
+struct Agenda {
+    ColaPrioridad cola;
+    long contador;        // cuantos eventos se han programado (para 'orden')
 };
 
-// Agenda de eventos: lista enlazada ORDENADA por tiempo.
-// El evento mas cercano en el tiempo siempre esta al frente.
-// Si dos eventos tienen el mismo tiempo, sale primero el que se inserto antes.
-// (Todo esta dentro del .hpp para no tener que cambiar los comandos de compilacion)
-class AgendaEventos {
-private:
-    NodoEvento* cabeza;
-    int cantidad;
+inline void agendaIniciar(Agenda* a) {
+    cpIniciar(&a->cola, MONTICULO, compararEvento);
+    a->contador = 0;
+}
 
-public:
-    AgendaEventos() : cabeza(nullptr), cantidad(0) {}
+// Reserva el evento con new. Quien lo extrae debe liberarlo con delete.
+inline void agendaProgramar(Agenda* a, int tiempo, int tipo, Paciente* p, int consultorio) {
+    Evento* e = new Evento;
+    e->tiempo = tiempo;
+    e->tipo = tipo;
+    e->paciente = p;
+    e->consultorio = consultorio;
+    e->orden = a->contador++;
+    cpInsertar(&a->cola, e);
+}
 
-    ~AgendaEventos() {
-        while (cabeza != nullptr) {
-            NodoEvento* borrar = cabeza;
-            cabeza = cabeza->siguiente;
-            delete borrar;
-        }
-    }
+inline Evento* agendaExtraerSiguiente(Agenda* a) { return (Evento*)cpExtraer(&a->cola); }
+inline Evento* agendaVerSiguiente(const Agenda* a) { return (Evento*)cpVer(&a->cola); }
+inline int agendaVacia(const Agenda* a) { return cpVacia(&a->cola); }
+inline int agendaTamano(const Agenda* a) { return cpTamano(&a->cola); }
 
-    // La agenda no se copia (evita que dos objetos compartan los mismos nodos)
-    AgendaEventos(const AgendaEventos&) = delete;
-    AgendaEventos& operator=(const AgendaEventos&) = delete;
+inline void liberarEventoCb(void* e, void*) { delete (Evento*)e; }
 
-    void insertar(const Evento& e) {
-        NodoEvento* nuevo = new NodoEvento(e);
-
-        // Caso 1: lista vacia o el nuevo evento es antes que el primero
-        if (cabeza == nullptr || e.tiempo < cabeza->dato.tiempo) {
-            nuevo->siguiente = cabeza;
-            cabeza = nuevo;
-        } else {
-            // Caso 2: avanzar mientras el siguiente evento sea del mismo tiempo o anterior
-            NodoEvento* actual = cabeza;
-            while (actual->siguiente != nullptr && actual->siguiente->dato.tiempo <= e.tiempo) {
-                actual = actual->siguiente;
-            }
-            nuevo->siguiente = actual->siguiente;
-            actual->siguiente = nuevo;
-        }
-        cantidad++;
-    }
-
-    // Saca y devuelve el evento mas proximo. Se debe verificar !estaVacia() antes.
-    Evento sacarSiguiente() {
-        NodoEvento* primero = cabeza;
-        Evento e = primero->dato;
-        cabeza = cabeza->siguiente;
-        delete primero;
-        cantidad--;
-        return e;
-    }
-
-    bool estaVacia() const { return cabeza == nullptr; }
-    int tamano() const { return cantidad; }
-};
+// Libera los eventos que queden y la estructura.
+inline void agendaLiberar(Agenda* a) {
+    cpParaCada(&a->cola, liberarEventoCb, NULL);
+    cpLiberar(&a->cola);
+}
 
 #endif
