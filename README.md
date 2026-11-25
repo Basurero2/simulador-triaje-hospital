@@ -48,6 +48,15 @@ simulador-triaje-hospital/
 ├── data/                     # Datasets de prueba (Llegadas de pacientes en CSV)
 │   └── pacientes_1000.csv
 │
+├──CMakeLists.txt             # Configuración de compilación CMake para vincular Qt6 y el motor C++
+│
+├──gui/                       # Interfaz Gráfica de Escritorio (Qt6 Widgets)
+│   ├──graficoBarras.cpp      # Cabecera del widget personalizado para gráficos de barras
+│   ├──graficoBarras.hpp      # Renderizado con QPainter para métricas de aging y comparación
+│   ├──main_gui.cpp           # Punto de entrada de la aplicación gráfica
+│   ├──ventanaPrincipal.cpp   # Cabecera de la ventana principal, controles y pestañas
+│   └──ventanaPrincipal.hpp   # Lógica de eventos en vivo, tablas, reporte y benchmarks
+│
 ├── .gitignore                # Filtro de archivos temporales y compilados
 └── README.md                 # Documentación principal del proyecto
 ```
@@ -94,6 +103,18 @@ g++ -std=c++17 src/main.cpp src/Paciente.cpp src/MonticuloBinario.cpp src/ListaO
 g++ -std=c++17 src/main.cpp src/Paciente.cpp src/MonticuloBinario.cpp src/ListaOrdenada.cpp src/Simulador.cpp -o simulador.out
 ./simulador.out
 ```
+### 4. Interfaz Gráfica (GUI en Qt6)
+Incluye 4 pestañas: Simulación en vivo, Reporte, Aging con/sin y Comparación de rendimiento.
+
+* **Opción A (Portable - Windows):** Descargue `triaje_gui_win64.zip` desde la sección **Releases** de GitHub y ejecute `triaje_gui.exe`.
+* **Opción B (Compilación desde código fuente en MSYS2 UCRT64):**
+  1. Instale dependencias: `pacman -S --needed mingw-w64-ucrt-x86_64-qt6-base mingw-w64-ucrt-x86_64-qt6-tools mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja`
+  2. Compile y ejecute:
+     ```bash
+     cmake -S . -B build-gui -G Ninja
+     cmake --build build-gui
+     ./build-gui/triaje_gui.exe
+     ```
 
 ---
 
