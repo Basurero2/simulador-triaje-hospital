@@ -201,10 +201,10 @@ static void imprimirTraza(const Simulador* s, const Evento* ev, int numero) {
     }
 }
 
-void simuladorEjecutar(Simulador* s, TipoCola tipo, int agingActivo, int trazaEventos) {
+int simuladorPreparar(Simulador* s, TipoCola tipo, int agingActivo) {
     if (s->numPacientes == 0) {
         std::cout << "[Simulador] No hay pacientes cargados. Nada que simular.\n";
-        return;
+        return 0;
     }
 
     // Preparar: la misma carga de pacientes se puede simular varias veces
@@ -235,44 +235,61 @@ void simuladorEjecutar(Simulador* s, TipoCola tipo, int agingActivo, int trazaEv
     if (agingActivo) {
         agendaProgramar(&s->agenda, s->pacientes[0].llegada + INTERVALO_AGING, EV_ENVEJECIMIENTO, NULL, -1);
     }
+    return 1;
+}
 
-    // Bucle principal: sacar el evento mas proximo, avanzar el reloj y procesarlo
-    int procesados = 0;
-    while (!agendaVacia(&s->agenda)) {
-        Evento* ev = agendaExtraerSiguiente(&s->agenda);
-        relojAvanzar(&s->reloj, ev->tiempo);
+// Procesa el evento mas proximo. Copia el evento en *procesado (si no es NULL).
+// Devuelve 0 si la agenda estaba vacia.
+int simuladorPaso(Simulador* s, Evento* procesado) {
+    if (agendaVacia(&s->agenda)) return 0;
 
-        if (ev->tipo == EV_LLEGADA) {
-            cpInsertar(&s->cola, ev->paciente);
-            programarSiguienteLlegada(s);
-            asignarConsultorios(s);
-        } else if (ev->tipo == EV_FIN_ATENCION) {
-            Consultorio* k = &s->consultorios[ev->consultorio];
-            k->ocupado = 0;
-            k->actual = NULL;
-            k->atendidos++;
-            k->minutosOcupado += ev->paciente->duracion;
-            if (ev->paciente->fin > s->tiempoFinal) s->tiempoFinal = ev->paciente->fin;
-            if (!colaVacia(&k->fila)) iniciarAtencion(s, ev->consultorio);
-            asignarConsultorios(s);
-        } else {   // EV_ENVEJECIMIENTO
-            aplicarAging(s);
-            // Se vuelve a programar solo si todavia queda trabajo pendiente
-            if (s->siguienteLlegada < s->numPacientes || !cpVacia(&s->cola)) {
-                agendaProgramar(&s->agenda, relojObtener(&s->reloj) + INTERVALO_AGING, EV_ENVEJECIMIENTO, NULL, -1);
-            }
+    Evento* ev = agendaExtraerSiguiente(&s->agenda);
+    relojAvanzar(&s->reloj, ev->tiempo);
+
+    if (ev->tipo == EV_LLEGADA) {
+        cpInsertar(&s->cola, ev->paciente);
+        programarSiguienteLlegada(s);
+        asignarConsultorios(s);
+    } else if (ev->tipo == EV_FIN_ATENCION) {
+        Consultorio* k = &s->consultorios[ev->consultorio];
+        k->ocupado = 0;
+        k->actual = NULL;
+        k->atendidos++;
+        k->minutosOcupado += ev->paciente->duracion;
+        if (ev->paciente->fin > s->tiempoFinal) s->tiempoFinal = ev->paciente->fin;
+        if (!colaVacia(&k->fila)) iniciarAtencion(s, ev->consultorio);
+        asignarConsultorios(s);
+    } else {   // EV_ENVEJECIMIENTO
+        aplicarAging(s);
+        // Se vuelve a programar solo si todavia queda trabajo pendiente
+        if (s->siguienteLlegada < s->numPacientes || !cpVacia(&s->cola)) {
+            agendaProgramar(&s->agenda, relojObtener(&s->reloj) + INTERVALO_AGING, EV_ENVEJECIMIENTO, NULL, -1);
         }
-
-        procesados++;
-        if (trazaEventos > 0 && procesados <= trazaEventos) imprimirTraza(s, ev, procesados);
-        delete ev;   // el evento lo reservo agendaProgramar; lo liberamos al procesarlo
     }
 
+    if (procesado != NULL) *procesado = *ev;
+    delete ev;   // el evento lo reservo agendaProgramar; lo liberamos al procesarlo
+    return 1;
+}
+
+void simuladorFinalizar(Simulador* s) {
     s->comparaciones = s->cola.comparaciones;
     cpLiberar(&s->cola);
     agendaLiberar(&s->agenda);
     for (int c = 0; c < NUM_CONSULTORIOS; c++) colaLiberar(&s->consultorios[c].fila);
     s->ejecutada = 1;
+}
+
+void simuladorEjecutar(Simulador* s, TipoCola tipo, int agingActivo, int trazaEventos) {
+    if (!simuladorPreparar(s, tipo, agingActivo)) return;
+
+    int procesados = 0;
+    Evento ev;
+    while (simuladorPaso(s, &ev)) {
+        procesados++;
+        if (trazaEventos > 0 && procesados <= trazaEventos) imprimirTraza(s, &ev, procesados);
+    }
+    simuladorFinalizar(s);
 }
 
 // ======================= REPORTE =======================

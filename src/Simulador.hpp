@@ -56,6 +56,10 @@ struct Simulador {
 void simuladorIniciar(Simulador* s);
 int  simuladorCargarCSV(Simulador* s, const std::string& ruta);   // devuelve cuantos pacientes cargo
 void simuladorEjecutar(Simulador* s, TipoCola tipo, int agingActivo, int trazaEventos);
+// Para ejecutar paso a paso (los usa la interfaz gráfica). simuladorEjecutar sigue funcionando igual.
+int  simuladorPreparar(Simulador* s, TipoCola tipo, int agingActivo);   
+int  simuladorPaso(Simulador* s, Evento* procesado);                   
+void simuladorFinalizar(Simulador* s);                                 
 void simuladorReporte(const Simulador* s);
 void simuladorLiberar(Simulador* s);
 
